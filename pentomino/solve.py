@@ -1,3 +1,7 @@
+from collections import deque
+
+import numpy as np
+
 TILE_DEFS = [
     [(0, 1), (0, 2), (0, 3), (0, 4)],
     [(1, 0), (0, 1), (1, 1), (0, 2)],
@@ -36,49 +40,131 @@ def rebase_tile(tile):
     return [(square[0] - base[0], square[1] - base[1]) for square in new_tile]
 
 
-def enrich_config(tile_config, x_range):
-    """Return a dictionary with the tile config (placement) details enriched
-    with useful info for placing the tile"""
+def enrich_tile(tile, x_range):
+    """Return a dictionary with the tile details enriched with useful info for
+    placing"""
     tile_dict = {
-        'xy_config': tile_config,
-        'adds': [square[0] + x_range * square[1] for square in tile_config],
+        'xy_config': tile,
+        'adds': [square[0] + x_range * square[1] for square in tile],
     }
 
-    all_x = [square[0] for square in tile_config]
+    all_x = [square[0] for square in tile]
     min_x = min(all_x)
     if min_x < 0:
         tile_dict['min_x'] = min_x
     max_x = max(all_x)
     if max_x > 0:
         tile_dict['max_x'] = max_x
-    max_y = max([square[1] for square in tile_config])
+    max_y = max([square[1] for square in tile])
     if max_y > 0:
         tile_dict['max_y'] = max_y
 
     return tile_dict
 
 
-def tile_configs(tile_defs, x_range):
-    """Use the tile definitions to create & return all possible configs
-    (placements) for each tile"""
+def tile_orientations(tile_defs, x_range):
+    """Use the tile definitions to create & return all possible orientations
+    for each tile"""
     tiles = [[(0, 0)] + tile for tile in tile_defs]
-    all_configs = []
+    all_orientations = []
     for tile in tiles:
-        this_tile_configs = []
+        orientations = []
         flipped = False
-        new_config = tile
+        new_orientation = tile
         while True:
-            new_config = rebase_tile(new_config)
-            if new_config not in this_tile_configs:
-                this_tile_configs.append(new_config)
-                new_config = rotate_tile(new_config)
+            new_orientation = rebase_tile(new_orientation)
+            if new_orientation not in orientations:
+                orientations.append(new_orientation)
+                new_orientation = rotate_tile(new_orientation)
             else:
                 if not flipped:
-                    new_config = flip_tile(new_config)
+                    new_orientation = flip_tile(new_orientation)
                     flipped = True
                 else:
                     break
-        all_configs.append(this_tile_configs)
-    enriched_configs = [[enrich_config(config, x_range) for config in configs] \
-                        for configs in all_configs]
-    return enriched_configs
+        all_orientations.append(orientations)
+    enriched_tiles = [[enrich_tile(orient, x_range) for orient in
+                       orientations] for orientations in all_orientations]
+    return enriched_tiles
+
+
+def square_index(square, xy_range):
+    """Return the index of the square given the range"""
+    return square[0] + square[1] * xy_range[0]
+
+
+def get_next_tile(tile, tile_orients, remaining_tiles):
+    """Tile here refers to (tile_num, orient_num):
+    - if tile is None, return first orientation of first tile.
+    - if tile is not None, look for next orientation for this tile and return
+      that;
+    - if there are no more orientations for the tile, replace it and return
+      first orientation for next tile;
+    - if there are no more tiles, return None."""
+    if tile is None:
+        return 0, 0
+
+    tile_num = tile[0]
+    next_orient_num = tile[1] + 1
+    if next_orient_num < len(tile_orients[tile_num]):
+        return tile_num, next_orient_num
+
+    if len(remaining_tiles) == 0 or \
+            tile_num > remaining_tiles[len(remaining_tiles) - 1]:
+        remaining_tiles.appendright(tile_num)
+        return None
+
+    num_rotations = 0
+    while tile_num < remaining_tiles[0]:
+        remaining_tiles.rotate(-1)
+        num_rotations += 1
+    new_tile_num = remaining_tiles.popleft()
+    remaining_tiles.appendleft(tile_num)
+    remaining_tiles.rotate(num_rotations)
+    return new_tile_num, 0
+
+
+def backtrack(placed_tiles, tile_orients, remaining_tiles):
+    """"""
+    pass
+
+
+def solve_puzzle(xy_range, filled_squares, tile_defs):
+    """Solve the puzzle with the given x-y range, filled squares and defined
+    tiles"""
+    # Check the filled squares are inside the range
+    for square in filled_squares:
+        if (square[0] < 0) or (square[0] >= xy_range[0]) \
+                or (square[1] < 0) or (square[1] >= xy_range[1]):
+            raise ValueError(f'Square outside range: {square}')
+
+    # Initialise the squares to unfilled (0)
+    squares = np.zeros(xy_range[0] * xy_range[1], dtype=np.int8)
+
+    # Set the specified squares to filled (1)
+    for square in filled_squares:
+        squares[square_index(square, xy_range)] = 1
+
+    # Determine all orientations for the tiles
+    tile_orients = tile_orientations(tile_defs, xy_range[0])
+
+    # Variables carrying state for the algorithm:
+    # - squares: array of squares (0 = empty, 1 = filled),
+    # - pos: next square to be filled,
+    # - placed_tiles: deque of tuples (pos, tile), where orient is tuple
+    #   (tile_num, orient_num) - filled / emptied from right,
+    # - remaining_tiles: deque of tile_num's - emptied / filled from left,
+    # - solutions: list of solutions discovered, where each solution is a
+    #   list of tuples (pos, tile) as per placed_tiles above.
+    pos = 0
+    placed_tiles = deque()
+    remaining_tiles = deque(xy_range(len(tile_orients)))
+    solutions = []
+
+    curr_tile = None
+    while True:
+        curr_tile = get_next_tile(curr_tile, tile_orients, remaining_tiles)
+        if curr_tile is None:
+            if len(placed_tiles) == 0:
+                return solutions
+            curr_tile = backtrack(placed_tiles, tile_orients, remaining_tiles)
