@@ -1,7 +1,15 @@
+"""Module for solving Pentomino problems in an 8x8 puzzle.
+
+(The code is more general and could be used to solve problems for other tile
+shapes in an M x N puzzle)"""
+
 from collections import deque
+import string
 
 import numpy as np
 
+# Pentomino tile defs in relative x-y terms. All tiles are assumed to have an
+# implicit (0, 0) square
 TILE_DEFS = [
     [(0, 1), (0, 2), (0, 3), (0, 4)],
     [(1, 0), (0, 1), (1, 1), (0, 2)],
@@ -18,6 +26,7 @@ TILE_DEFS = [
 ]
 
 
+# All these functions are for setting up the tile orientations in advance
 def square_key(square):
     return square[1], square[0]
 
@@ -88,6 +97,8 @@ def tile_orientations(tile_defs, x_range):
     return enriched_tiles
 
 
+# All these functions are (mostly) for solving the problem given the pre-built
+# tile orientations
 def square_pos(square, xy_range):
     """Return the index of the square given the range"""
     return square[0] + square[1] * xy_range[0]
@@ -171,7 +182,7 @@ def place_tile(tile, tile_orients, pos, xy_range, squares, placed_tiles):
     tile_squares = tile_details['adds'] + pos
 
     # Check all squares that would be covered by the tile are empty
-    if np.sum(squares[tile_squares]) > 0:
+    if sum(squares[tile_squares]) > 0:
         return pos, tile
 
     squares[tile_squares] = 1
@@ -231,5 +242,20 @@ def solve_puzzle(xy_range, filled_squares, tile_defs):
                                        remaining_tiles)
 
 
-solve_puzzle((8, 8), [(1, 2), (3, 4), (5, 7), (6, 7)],
-             TILE_DEFS)
+# Simple display using capital letters. Obviously will break if there are more
+# than 26 tiles
+LABELS = list(string.ascii_uppercase)
+
+
+def display_solution(solution, tile_orients, xy_range):
+    """Display solution as text. NB: Bottom left is (0, 0)"""
+    chars = [' '] * xy_range[0] * xy_range[1]
+    for pos, (tile_num, config_num) in solution:
+        label = LABELS[tile_num]
+        for char_pos in tile_orients[tile_num][config_num]['adds'] + pos:
+            chars[char_pos] = label
+
+    solution_str = ''.join(chars)
+
+    for y in reversed(range(xy_range[1])):
+        print(solution_str[y * xy_range[0]:(y + 1) * xy_range[0]])
