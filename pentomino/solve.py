@@ -126,7 +126,8 @@ def get_next_tile(tile, tile_orients, remaining_tiles):
 
 def backtrack(placed_tiles, tile_orients, remaining_tiles):
     """"""
-    pass
+    if len(placed_tiles) == 0:
+        return None
 
 
 def solve_puzzle(xy_range, filled_squares, tile_defs):
@@ -165,6 +166,6 @@ def solve_puzzle(xy_range, filled_squares, tile_defs):
     while True:
         curr_tile = get_next_tile(curr_tile, tile_orients, remaining_tiles)
         if curr_tile is None:
-            if len(placed_tiles) == 0:
-                return solutions
             curr_tile = backtrack(placed_tiles, tile_orients, remaining_tiles)
+            if curr_tile is None:
+                return solutions
