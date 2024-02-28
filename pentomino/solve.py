@@ -6,8 +6,6 @@ shapes in an M x N puzzle)"""
 from collections import deque
 import string
 
-import numpy as np
-
 # Pentomino tile defs in relative x-y terms. All tiles are assumed to have an
 # implicit (0, 0) square
 TILE_DEFS = [
@@ -49,12 +47,11 @@ def rebase_tile(tile):
     return [(square[0] - base[0], square[1] - base[1]) for square in new_tile]
 
 
-def enrich_tile(tile, x_range):
+def enrich_tile(tile):
     """Return a dictionary with the tile details enriched with useful info for
     placing"""
     tile_dict = {
-        'xy_config': tile,
-        'adds': np.array([square[0] + x_range * square[1] for square in tile]),
+        'xy_coord': tile,
     }
 
     all_x = [square[0] for square in tile]
@@ -71,7 +68,7 @@ def enrich_tile(tile, x_range):
     return tile_dict
 
 
-def tile_orientations(tile_defs, x_range):
+def tile_orientations(tile_defs):
     """Use the tile definitions to create & return all possible orientations
     for each tile"""
     tiles = [[(0, 0)] + tile for tile in tile_defs]
@@ -92,23 +89,13 @@ def tile_orientations(tile_defs, x_range):
                 else:
                     break
         all_orientations.append(orientations)
-    enriched_tiles = [[enrich_tile(orient, x_range) for orient in
+    enriched_tiles = [[enrich_tile(orient) for orient in
                        orientations] for orientations in all_orientations]
     return enriched_tiles
 
 
 # All these functions are (mostly) for solving the problem given the pre-built
 # tile orientations
-def square_pos(square, xy_range):
-    """Return the index of the square given the range"""
-    return square[0] + square[1] * xy_range[0]
-
-
-def square_xy(pos, xy_range):
-    """Return the xy coords of the square given the range"""
-    return pos % xy_range[0], int(pos / xy_range[0])
-
-
 def get_next_tile(tile, tile_orients, remaining_tiles):
     """Tile here refers to (tile_num, orient_num):
     - if tile is None, return first orientation of first of the remaining tiles,
@@ -152,13 +139,29 @@ def backtrack(placed_tiles, tile_orients, squares, remaining_tiles):
     was placed in"""
     if len(placed_tiles) == 0:
         return 0, None
-    pos, tile = placed_tiles.pop()
-    tile_squares = tile_orients[tile[0]][tile[1]]['adds'] + pos
-    squares[tile_squares] = 0
+    (x, y), tile = placed_tiles.pop()
+
+    # Remove the tile
+    tile_xy_coord = tile_orients[tile[0]][tile[1]]['xy_coord']
+    for tile_x, tile_y in tile_xy_coord:
+        squares[y + tile_y][x + tile_x] = 0
+
     next_tile = get_next_tile(tile, tile_orients, remaining_tiles)
     if next_tile is None:
         return backtrack(placed_tiles, tile_orients, squares, remaining_tiles)
-    return pos, next_tile
+
+    return (x, y), next_tile
+
+
+def step_forward(pos, xy_range):
+    """Step forward to the next square."""
+    x = pos[0] + 1
+    if x == xy_range[0]:
+        x = 0
+        y = pos[1] + 1
+    else:
+        y = pos[1]
+    return x, y
 
 
 def place_tile(tile, tile_orients, pos, xy_range, squares, placed_tiles):
@@ -168,27 +171,31 @@ def place_tile(tile, tile_orients, pos, xy_range, squares, placed_tiles):
     tile_details = tile_orients[tile[0]][tile[1]]
 
     # Check the tile fits within the xy range
-    x, y = square_xy(pos, xy_range)
-    if 'min_x' in tile_details:
-        if x + tile_details['min_x'] < 0:
-            return pos, tile
-    if 'max_x' in tile_details:
-        if x + tile_details['max_x'] >= xy_range[0]:
-            return pos, tile
-    if 'max_y' in tile_details:
-        if y + tile_details['max_y'] >= xy_range[1]:
-            return pos, tile
-
-    tile_squares = tile_details['adds'] + pos
-
-    # Check all squares that would be covered by the tile are empty
-    if sum(squares[tile_squares]) > 0:
+    x, y = pos
+    if (('min_x' in tile_details) and (x + tile_details['min_x'] < 0)) \
+            or (('max_x' in tile_details) and (x + tile_details['max_x']
+                                               >= xy_range[0])) \
+            or (('max_y' in tile_details) and (y + tile_details['max_y']
+                                               >= xy_range[1])):
         return pos, tile
 
-    squares[tile_squares] = 1
+    tile_xy_coord = tile_details['xy_coord']
+
+    # Check all squares that would be covered by the tile are empty
+    for tile_x, tile_y in tile_xy_coord:
+        if squares[y + tile_y][x + tile_x] > 0:
+            return pos, tile
+
+    # Place the tile
+    for tile_x, tile_y in tile_xy_coord:
+        squares[y + tile_y][x + tile_x] = 1
+
     placed_tiles.append((pos, tile))
-    while pos < len(squares) and squares[pos] > 0:
-        pos += 1
+
+    pos = step_forward(pos, xy_range)
+    while pos[1] < xy_range[1] and squares[pos[1]][pos[0]] > 0:
+        pos = step_forward(pos, xy_range)
+
     return pos, None
 
 
@@ -196,30 +203,30 @@ def solve_puzzle(xy_range, filled_squares, tile_defs):
     """Solve the puzzle with the given x-y range, filled squares and defined
     tiles"""
     # Check the filled squares are inside the range
-    for square in filled_squares:
-        if (square[0] < 0) or (square[0] >= xy_range[0]) \
-                or (square[1] < 0) or (square[1] >= xy_range[1]):
-            raise ValueError(f'Square outside range: {square}')
+    for fill_x, fill_y in filled_squares:
+        if (fill_x < 0) or (fill_x >= xy_range[0]) \
+                or (fill_y < 0) or (fill_y >= xy_range[1]):
+            raise ValueError(f'Square outside range: {fill_x, fill_y}')
 
     # Initialise the squares to unfilled (0)
-    squares = np.zeros(xy_range[0] * xy_range[1], dtype=np.int8)
+    squares = [xy_range[0] * [0] for _ in range(xy_range[1])]
 
     # Set the specified squares to filled (1)
-    for square in filled_squares:
-        squares[square_pos(square, xy_range)] = 1
+    for fill_x, fill_y in filled_squares:
+        squares[fill_y][fill_x] = 1
 
     # Determine all orientations for the tiles
-    tile_orients = tile_orientations(tile_defs, xy_range[0])
+    tile_orients = tile_orientations(tile_defs)
 
     # Variables carrying state for the algorithm:
     # - squares: array of squares (0 = empty, 1 = filled),
     # - pos: next square to be filled,
-    # - placed_tiles: deque of tuples (pos, tile), where orient is tuple
+    # - placed_tiles: deque of tuples (pos, tile), where tile is tuple
     #   (tile_num, orient_num) - filled / emptied from right,
     # - remaining_tiles: deque of tile_num's - emptied / filled from left,
     # - solutions: list of solutions discovered, where each solution is a
     #   list of tuples (pos, tile) as per placed_tiles above.
-    pos = 0
+    pos = (0, 0)
     placed_tiles = deque()
     remaining_tiles = deque(range(len(tile_orients)))
     solutions = []
@@ -235,7 +242,8 @@ def solve_puzzle(xy_range, filled_squares, tile_defs):
                 return solutions
         pos, curr_tile = place_tile(curr_tile, tile_orients, pos, xy_range,
                                     squares, placed_tiles)
-        if pos == len(squares):
+        if pos[1] == xy_range[1]:
+            # Position is outside the grid - so puzzle must be solved
             solution = list(placed_tiles)
             solutions.append(solution)
             pos, curr_tile = backtrack(placed_tiles, tile_orients, squares,
@@ -249,13 +257,11 @@ LABELS = list(string.ascii_uppercase)
 
 def display_solution(solution, tile_orients, xy_range):
     """Display solution as text. NB: Bottom left is (0, 0)"""
-    chars = [' '] * xy_range[0] * xy_range[1]
-    for pos, (tile_num, config_num) in solution:
+    chars = [xy_range[0] * [' '] for _ in range(xy_range[1])]
+    for (x, y), (tile_num, config_num) in solution:
         label = LABELS[tile_num]
-        for char_pos in tile_orients[tile_num][config_num]['adds'] + pos:
-            chars[char_pos] = label
-
-    solution_str = ''.join(chars)
+        for tile_x, tile_y in tile_orients[tile_num][config_num]['xy_coord']:
+            chars[y + tile_y][x + tile_x] = label
 
     for y in reversed(range(xy_range[1])):
-        print(solution_str[y * xy_range[0]:(y + 1) * xy_range[0]])
+        print(''.join(chars[y]))

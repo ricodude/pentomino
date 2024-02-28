@@ -57,13 +57,7 @@ TILE_DEFS = [
 
 ### Dependencies
 
-* Numpy
-* Jupyter - if you want to run the notebooks
-
-Numpy is just used to make the code for placing the tiles simpler. I experimented 
-a little with using it to improve performance - e.g. using np.sum() - but this 
-had a negative effect, perhaps because the arrays are too small to justify the 
-overhead.
+* Jupyter - if you want to run the notebook examples
 
 ### Running the program
 
@@ -76,7 +70,7 @@ solutions = solve.solve_puzzle(xy_range, filled_squares, solve.TILE_DEFS)
 You can then display the solutions using `solve.display_solution()`. This will 
 need the set of tile orientations for the display, which is a little clunky:
 ```python
-tile_orients = solve.tile_orientations(solve.TILE_DEFS, xy_range[0])
+tile_orients = solve.tile_orientations(solve.TILE_DEFS)
 solve.display_solution(solutions[0], tile_orients, xy_range)
 ```
 This displays a simple text output, labelling each tile with a different capital letter:
